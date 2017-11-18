@@ -5,7 +5,8 @@
 (require syntax/parse syntax/parse/define racket/bool racket/hash
          (for-syntax racket/base)
          "default-parse-table.rkt"
-         "private/helper.rkt")
+         "private/helper.rkt"
+         "private/logger.rkt")
 
 (define ($* plt)
   (lambda (stx)
@@ -21,12 +22,11 @@
                           [prevunary? #f]
                           [prevsepar? #f])
                          ([item (attribute terms)])
-                 ; (trce prevunary?)
-                 ; (dbug outstack opstack)
+                 (trce prevop? prevunary? prevsepar?)
+                 (dbug outstack opstack)
                  (let ([open (syntax-e item)])
                    (cond
                      [(list? open)
-                      ; (displayln "interesting, let's put a $ in front of it")
                       (if prevsepar?
                         (shunt item outstack opstack prevop? prevunary? #f)
                         (shunt (datum->syntax stx `($ ,@open)) outstack opstack prevop? prevunary? prevsepar?))]
@@ -34,21 +34,17 @@
                        (let* ([ref (hash-ref l open)]
                               [prec (car ref)]
                               [assoc (cadr ref)])
-                         ; (displayln `("calling operate with" ,open))
-                         ; discriminating type
                          (if (symbol=? assoc 'separator)
-                           (begin ; (displayln "is separator")
-                                  ; Push the remaining exprs into the last element
-                                  (values outstack opstack #t #f #t)
-                                  )
-                           (begin ; (displayln "not separator")
-                                  (operate item prec assoc outstack opstack l prevop?))))]
+                           (begin
+                                  (values outstack opstack #t prevunary? #t))
+                           (begin
+                                  (operate item prec assoc outstack opstack l prevop? prevunary? prevsepar?))))]
                      [else
-                       ; (crit "shunting")
+                       (crit "shunting")
                        (shunt item outstack opstack prevop? prevunary? prevsepar?)]))
                   )])
-           ; (warn* `("fout:" ,outstack))
-           ; (warn* `("fops:" ,opstack))
+           (warn* `("fout:" ,outstack))
+           (warn* `("fops:" ,opstack))
              (car (for/fold ([outstack* outstack])
                             ([item opstack])
                  ; (trce item)
@@ -57,6 +53,8 @@
                  ;(list (cons item (take-last-two outstack*)))))
                  (append (drop-last-two outstack*) (list (cons item (take-last-two outstack*))))
                ))))
+
+       (crit (attribute anything))
 
        ; (trce (attribute anything))
        (datum->syntax stx (syntax->datum #'anything))])))

@@ -47,6 +47,12 @@ Arbitrary types are supported. Here, booleans.
 @examples[#:eval evaluator
   ($ 1 + 2 >= 3 and (5 + 2) / 2 < 5)]
 
+@subsection{More examples}
+@examples[#:eval evaluator
+  ($ - sin 1 + 1)
+  ($ (cos 10 + sin 10) / 2)
+  ($ - ~(identity 1))]
+
 @subsection{Importing standard bindings}
 Functions such as @racket[modulo] are not bound to @racket[%] by default. To do this we can import @racket[k-infix/default] which provides @racket[$ default-parse-table bior bxor band != <=> << >> % ^ bnot]
 
@@ -60,12 +66,13 @@ Functions such as @racket[modulo] are not bound to @racket[%] by default. To do 
 Bitwise operators.
 @examples[#:eval evaluator
   (require k-infix/default)
+  ($ - sin 3)
   ($ bnot 4 % 32818 bxor 3102 bior 31293 band 3 >> 2 << 3)]
 
 
 Comparison operators.
 @examples[#:eval evaluator
-  (require k-infix k-infix/default)
+  (require k-infix/default)
   ($ 1 != (2 <=> 2))]
 
 Other operators are available from the default racket namespace and are listed in @secref["dpr"].
