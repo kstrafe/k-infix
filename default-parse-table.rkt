@@ -8,7 +8,7 @@
   (create-lookup-table
     (or 0 left "boolean or")
     (and 1 left "boolean and")
-    (bor 2 left "bitwise ior")
+    (bior 2 left "bitwise ior")
     (bxor 3 left "bitwise xor")
     (band 4 left "bitwise and")
     (= 5 left "equality comparison")

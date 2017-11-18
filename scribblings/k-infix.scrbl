@@ -47,6 +47,29 @@ Arbitrary types are supported. Here, booleans.
 @examples[#:eval evaluator
   ($ 1 + 2 >= 3 and (5 + 2) / 2 < 5)]
 
+@subsection{Importing standard bindings}
+Functions such as @racket[modulo] are not bound to @racket[%] by default. To do this we can import @racket[k-infix/default] which provides @racket[$ default-parse-table bior bxor band != <=> << >> % ^ bnot]
+
+@(set! evaluator
+   (parameterize ([sandbox-output 'string]
+                  [sandbox-error-output 'string]
+                  [sandbox-memory-limit #f]
+                  [sandbox-eval-limits #f])
+     (make-evaluator 'racket)))
+
+Bitwise operators.
+@examples[#:eval evaluator
+  (require k-infix/default)
+  ($ bnot 4 % 32818 bxor 3102 bior 31293 band 3 >> 2 << 3)]
+
+
+Comparison operators.
+@examples[#:eval evaluator
+  (require k-infix k-infix/default)
+  ($ 1 != (2 <=> 2))]
+
+Other operators are available from the default racket namespace and are listed in @secref["dpr"].
+
 @subsection{Parser separators}
 
 For expressions that require non-infix evaluation you can use a @racket['separator] (see @secref["plt"]).
@@ -174,8 +197,8 @@ The table for a parser can be retrieved by running the parser without any argume
   (my-$2)]
 
 
-@section{Default parser rules}
+@section[#:tag "dpr"]{Default parser rules}
 Here are all operators, their precedence, and associativity respectively.
 @examples[
-  (require k-infix/default-parse-table racket/pretty)
+  (require k-infix/default racket/pretty)
   (pretty-write default-parse-table)]
