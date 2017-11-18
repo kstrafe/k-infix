@@ -6,6 +6,10 @@
   #:datum-literals (:)
   [(_ (v:expr : (x:expr ...+)) ...)
    #'(begin (check-equal? ($ x ...) v) ...)])
+(define-syntax-parser check-expr-fails
+  #:datum-literals (:)
+  [(_ (v:expr : (x:expr ...+)) ...)
+   #'(begin (check-exn v (lambda () ($ x ...))) ...)])
 (define (f1 x) x)
 (define (f2-1 x y) x)
 (define (f2-2 x y) y)
@@ -58,5 +62,10 @@
   (0      : (- sin ~(if #t 0 1)))
   (-1     : (- cos ~(if #t 0 1)))
   (3      : (- ~(tan 0) + ~(if - 3 2)))
-  ; (1      : (- (if + 1 2))) ; this should fail
+  (3      : (- ~(tan (if * 0 2)) + ~(if - 3 2)))
+  (1      : (cos (sin 0)))
+  (-2     : (- (1 + 1)))
+  (-10    : (5 * - (1 + 1)))
+  (3      : (5 + cos 0 * - (1 + 1)))
+  (7      : (5 + cos 0 * - - (1 + 1)))
   )

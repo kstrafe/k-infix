@@ -1,57 +1,59 @@
 #lang racket
 
-(provide create-lookup-table drop-last-two entry? operate shunt take-last-two)
-
+(provide create-lookup-table entry? operate shunt)
 
 (require syntax/parse syntax/parse/define "logger.rkt")
 
-;; Append to the last list inside lst: so (append-last '((a) (b c)) 'd) => '((a) (b (c d)))
+(module+ test (require rackunit syntax/parse/define))
+
+; Append to the last element inside a list, if said element is not a list, turn it into one.
+; If the input list is empty then add an empty list into it.
 (define (append-last lst item)
-  ; (dbug `(,lst ,item))
-  (if (and (list? lst) (not (empty? lst)))
-    (append (not-last lst) (list (append-last (last lst) item)))
-    (list lst item))
-  )
+  (if (empty? lst)
+    (list (list item))
+    (if (list? (last lst))
+      (append (drop-right lst 1) (list (append (last lst) (list item))))
+      (append (drop-right lst 1) (list (append (list (last lst)) (list item)))))))
 
-(define (append-last* lst item)
-  (if (list? (last lst))
-    (append (drop-last lst) (list (append (last lst) (list item))))
-    (append (drop-last lst) (list (append (list (last lst)) (list item))))
-  ))
+(module+ test
+  (define-syntax-parser checker
+    #:datum-literals (:)
+    [(_ checker:expr fn:expr (result:expr : arg:expr ...) ...)
+     #'(begin
+        (checker (fn arg ...) result) ...)])
+  (checker check-equal? append-last
+    ['((a))       : '() 'a]
+    ['((()))      : '() '()]
+    ['((() a))    : '((())) 'a]
+    ['((a))       : '(()) 'a]
+    ['((a b))     : '((a)) 'b]
+    ['((a b) (c)) : '((a b) ()) 'c]))
 
-(define (append-last2* lst item)
-  (append (drop-last lst) (list (append-last* (last lst) item)))
-  )
-
+; Append to the right-most, deepest list inside a tree (nested lists)
 (define (append-deep-right lst item)
   (if (list? lst)
     (if (empty? lst)
       (list item)
       (if (list? (last lst))
-        (append (drop-last lst) (list (append-deep-right (last lst) item)))
+        (append (drop-right lst 1) (list (append-deep-right (last lst) item)))
         (append lst (list item))))
     (error "append-deep-right: not a list")))
+
+(module+ test
+  (checker check-equal? append-deep-right
+    ['(a)         : '()      'a]
+    ['(a b)       : '(a)     'b]
+    ['(a (b))     : '(a ())  'b]
+    ['(a (b c))   : '(a (b)) 'c]))
 
 (begin-for-syntax
   (define-syntax-class lr
     #:datum-literals (left right separator)
     (pattern (~or left right separator))))
 
-
 (define-syntax-parser create-lookup-table
   [(_ (op:id prec:exact-integer assoc:lr (~optional desc:expr #:defaults ([desc #'"no description given"]))) ...)
    #'(make-immutable-hash '((op . (prec assoc desc)) ...))])
-
-(define (drop-last lst)
-  (match (length lst)
-    [0 null]
-    [else (take lst (- (length lst) 1))]))
-
-(define (drop-last-two lst)
-  (match (length lst)
-    [0 null]
-    [1 null]
-    [else (take lst (- (length lst) 2))]))
 
 (define (entry? lst)
   (and
@@ -69,13 +71,8 @@
       (string? (caddr lst))
       #t)))
 
-(define (not-last lst)
-  (if (>= (length lst) 1)
-    (take lst (sub1 (length lst)))
-    lst))
-
-
-(define (operate op prec assoc outstack opstack lookup prevop? prevunary? prevsepar?)
+; Process an operator
+(define (operate op prec assoc outstack opstack lookup prevop? postunary? prevunary? prevsepar?)
   (let ([c #'(lambda x
               (if (procedure? (car x))
                 (apply (car x) (cdr x))
@@ -83,41 +80,29 @@
                   (car x)
                   (error "non-procedures can not have arguments"))))])
     (if prevop?
-    ; Then this operator is unary, and we just push it to the out stack
-      (values (append-deep-right (append-deep-right outstack (list op)) (list c)) opstack #f #t #t)
-      (if (and prevunary? prevsepar?)
-        (values (append-deep-right (append-deep-right outstack op) (list c)) opstack #f #t #t)
-
+      (values (append-deep-right (append-last (append outstack '(())) op)
+                                 (list c))
+              opstack #f #t #t #f)
+      (if (and prevunary? postunary?)
+        (values (append-deep-right (append-deep-right outstack op) (list c)) opstack #f #t #t #f)
         (if (not (empty? opstack))
           (let* ([ref (hash-ref lookup (syntax-e (car opstack)))]
                  [prec* (car ref)])
             (if (and (>= prec* prec) (symbol=? 'left assoc))
-              (begin (trce "higher operator found")
-                     (operate op prec assoc
-                              (append (drop-last-two outstack) (list (cons (car opstack) (take-last-two outstack))))
-                              (cdr opstack)
-                              lookup
-                              prevop?
-                              prevunary?
-                              prevsepar?))
-              (begin (trce "not higher operator")
-                     (values outstack (cons op opstack) #t #f #f))))
-          (begin
-            (trce "opstack is empty, we can only push it on there")
-            (values outstack (cons op opstack) #t #f #f)))))))
+              (operate op prec assoc
+                       (append (drop-right outstack 2) (list (cons (car opstack) (take-right outstack 2))))
+                       (cdr opstack)
+                       lookup
+                       prevop?
+                       prevunary?
+                       postunary?
+                       prevsepar?)
+              (values outstack (cons op opstack) #t #f #f #f)))
+          (values outstack (cons op opstack) #t #f #f #f))))))
 
+; Process a non-operator
 (define (shunt value outstack opstack prevop? prevunary? prevsepar?)
-  (info value outstack opstack prevop? prevunary? prevsepar?)
   (cond
-    [prevunary? (values (append-deep-right outstack value) opstack #f #t #f)]
-    [prevop? (values (append outstack (list value)) opstack #f #f #f)]
-    ; [prevunary? (values (append outstack (list (list (car opstack) value))) (cdr opstack) #f #f #f)]
-    [else (values (append-last* outstack value) opstack #f #f #f)]
-    ))
-
-(define (take-last-two lst)
-  (match (length lst)
-    [0 lst]
-    [1 lst]
-    [else (drop lst (- (length lst) 2))]))
-
+    [prevunary? (values (append-deep-right outstack value) opstack #f #t #f #f)]
+    [prevop?    (values (append outstack (list value))     opstack #f #f #f #f)]
+    [else       (values (append-last outstack value)       opstack #f #f #f #f)]))
