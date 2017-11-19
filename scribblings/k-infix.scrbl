@@ -96,10 +96,15 @@ Here is a more advanced example.
 @section[#:tag "plt"]{Parse lookup table}
 The parser uses a lookup table to determine the precedence and associativity of operators, you can define your own using @racket[create-lookup-table].
 @defform[(create-lookup-table plt)
-         #:grammar ([plt ((op prec assoc maybe-description) ...)]
-                    [assoc left right separator]
+         #:grammar ([plt ((op prec assoc maybe-unary maybe-description) ...)]
+                    [prec exact-integer]
+                    [assoc left right]
+                    [maybe-unary (code:line)
+                                   unary-prec]
+                    [unary-prec exact-integer]
                     [maybe-description (code:line) description])]{
   Returns a parse lookup table.
+  Not specifying unary makes unary-prec = prec.
 }
 
 @defproc[(parse-lookup-table? [table hash?]) boolean?]{

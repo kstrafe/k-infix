@@ -29,31 +29,16 @@
     ['((a b))     : '((a)) 'b]
     ['((a b) (c)) : '((a b) ()) 'c]))
 
-; Append to the right-most, deepest list inside a tree (nested lists)
-(define (append-deep-right lst item)
-  (if (list? lst)
-    (if (empty? lst)
-      (list item)
-      (if (list? (last lst))
-        (append (drop-right lst 1) (list (append-deep-right (last lst) item)))
-        (append lst (list item))))
-    (error "append-deep-right: not a list")))
-
-(module+ test
-  (checker check-equal? append-deep-right
-    ['(a)         : '()      'a]
-    ['(a b)       : '(a)     'b]
-    ['(a (b))     : '(a ())  'b]
-    ['(a (b c))   : '(a (b)) 'c]))
-
 (begin-for-syntax
   (define-syntax-class lr
     #:datum-literals (left right separator)
     (pattern (~or left right separator))))
 
 (define-syntax-parser create-lookup-table
-  [(_ (op:id prec:exact-integer assoc:lr (~optional desc:expr #:defaults ([desc #'"no description given"]))) ...)
-   #'(make-immutable-hash '((op . (prec assoc desc)) ...))])
+  [(_ (op:id prec:exact-integer assoc:lr
+             (~optional unary-prec:exact-integer #:defaults ([unary-prec #'prec]))
+             (~optional desc:expr #:defaults ([desc #'"no description given"]))) ...)
+   #'(make-immutable-hash '((op . (prec assoc unary-prec unary-assoc desc)) ...))])
 
 (define (entry? lst)
   (and
@@ -146,7 +131,7 @@
            [top*       (car top+)]
            [top        (hash-ref plt (syntax-e (car top+)))]
            [top-unary? (cadr top+)]
-           [top-prec   (car top)]
+           [top-prec   ((if top-unary? caddr car) top)]
            [top-assoc  (cadr top)])
       (if (and (>= top-prec val-prec) (symbol=? val-assoc 'left))
         (operate val item (if top-unary? (unary-out out top*) (binary-out out top*)) (cdr ops) #f escape? plt)

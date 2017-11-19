@@ -15,8 +15,7 @@
       [(_) (datum->syntax stx plt)]
       [(_ terms ...+)
        #:with result (parse stx (attribute terms) plt)
-       (datum->syntax stx (attribute result))]
-      )))
+       (datum->syntax stx (attribute result))])))
 
 (define ($+ plt)
   ($* (hash-union default-parse-table plt
