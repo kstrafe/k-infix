@@ -1,6 +1,6 @@
 #lang racket
 
-(provide create-lookup-table entry? operate shunt)
+(provide create-lookup-table entry? parse)
 
 (require syntax/parse syntax/parse/define "logger.rkt")
 
@@ -71,38 +71,91 @@
       (string? (caddr lst))
       #t)))
 
+(define-syntax (for/fold-let stx)
+  (syntax-parse stx
+    [(_ ([entry value] ...) others ... finalizer)
+     #'(let-values ([(entry ...)
+          (for/fold ([entry value] ...)
+                    others ...)])
+          finalizer)]))
+
+(define (parse stx terms plt)
+  (for/fold-let
+            ([outstack null]
+             [opstack  null]
+             [unary?   #t]
+             [escape?  #f])
+            ([item terms])
+    (let* ([content (syntax-e item)])
+      (trce outstack opstack unary? escape? content)
+      (info "==========")
+      (cond
+        [(list? content)
+         (express content item outstack opstack unary? escape? stx content plt)]
+        [(and (symbol? content) (symbol=? content '~))
+         (values outstack opstack unary? #t)]
+        [(hash-has-key? plt content)
+         (operate content item outstack opstack unary? escape? plt)]
+        [else (shunt content item outstack opstack unary? escape?)]
+      )
+    )
+    (begin
+      (warn outstack opstack)
+      (for/fold-let ([out outstack])
+                    ([ops opstack])
+        (if (cadr ops)
+          (unary-out out (car ops))
+          (binary-out out (car ops)))
+        (begin
+          (dbug out)
+          (datum->syntax stx (car out)))
+      ))))
+
+(define (drop-right* lst n)
+  (if (> n (length lst))
+    '()
+    (drop-right lst n)))
+
+(define (take-right* lst n)
+  (if (> n (length lst))
+    lst
+    (take-right lst n)))
+
+(define (unary-out lst op)
+  (crit lst)
+  (append (drop-right* lst 1) (list (cons op (take-right* lst 1)))))
+
+(define (binary-out lst op)
+  (erro lst)
+  (append (drop-right* lst 2) (list (cons op (take-right* lst 2)))))
+
+(define (express val item out ops unary? escape? stx terms plt)
+  (if escape?
+    (shunt val item out ops unary? escape?)
+    (shunt val (parse stx terms plt) out ops unary? escape?)))
+
 ; Process an operator
-(define (operate op prec assoc outstack opstack lookup prevop? postunary? prevunary? prevsepar?)
-  (let ([c #'(lambda x
-              (if (procedure? (car x))
-                (apply (car x) (cdr x))
-                (if (= (length x) 1)
-                  (car x)
-                  (error "non-procedures can not have arguments"))))])
-    (if prevop?
-      (values (append-deep-right (append-last (append outstack '(())) op)
-                                 (list c))
-              opstack #f #t #t #f)
-      (if (and prevunary? postunary?)
-        (values (append-deep-right (append-deep-right outstack op) (list c)) opstack #f #t #t #f)
-        (if (not (empty? opstack))
-          (let* ([ref (hash-ref lookup (syntax-e (car opstack)))]
-                 [prec* (car ref)])
-            (if (and (>= prec* prec) (symbol=? 'left assoc))
-              (operate op prec assoc
-                       (append (drop-right outstack 2) (list (cons (car opstack) (take-right outstack 2))))
-                       (cdr opstack)
-                       lookup
-                       prevop?
-                       prevunary?
-                       postunary?
-                       prevsepar?)
-              (values outstack (cons op opstack) #t #f #f #f)))
-          (values outstack (cons op opstack) #t #f #f #f))))))
+(define (operate val item out ops unary? escape? plt)
+  (if (or (empty? ops) unary?)
+    (values out (cons (list item unary?) ops) #t #f)
+    (let* ([val*       (hash-ref plt val)]
+           [val-unary? unary?]
+           [val-prec   (car val*)]
+           [val-assoc  (cadr val*)]
+           [top+       (car ops)]
+           [top*       (car top+)]
+           [top        (hash-ref plt (syntax-e (car top+)))]
+           [top-unary? (cadr top+)]
+           [top-prec   (car top)]
+           [top-assoc  (cadr top)])
+      (if (and (>= top-prec val-prec) (symbol=? val-assoc 'left))
+        (operate val item (if top-unary? (unary-out out top*) (binary-out out top*)) (cdr ops) #f escape? plt)
+        (values out (cons (list item unary?) ops) #t #f)))))
 
 ; Process a non-operator
-(define (shunt value outstack opstack prevop? prevunary? prevsepar?)
-  (cond
-    [prevunary? (values (append-deep-right outstack value) opstack #f #t #f #f)]
-    [prevop?    (values (append outstack (list value))     opstack #f #f #f #f)]
-    [else       (values (append-last outstack value)       opstack #f #f #f #f)]))
+(define (shunt value item out ops unary? escape?)
+  (values
+    (if unary?
+      (append out (list item))
+      (append-last out item))
+    ops #f #f))

@@ -204,7 +204,7 @@ Lists are written using functional form.
   ($ list 1 (2 + 3) 9 (sin 10 + 1))]
 One can add a parse-rule for `list-append` like so
 @examples[#:eval evaluator2 #:label #f
-  (define-$* $- (append 0 left))
+  (define-$+ $- (append 0 left))
   ($- list 1 (2 + 3) 9 (sin 10 + 1) append list 'a 'b 'c)]
 
 Or if you prefer @racket[++]. Let's also throw in some cons.
@@ -223,13 +223,18 @@ Depending on the precedence, square root may come before or after other operator
   (define-$+ $3 (sqrt 20 left))
   ($3 sqrt 3 + sqrt 5 * 2)]
 
-One can also use lower precedence, but this will have no effect:
+One can also use lower precedence:
 
 @examples[#:eval evaluator2 #:label #f
   (define-$+ $4 (sqrt 0 left))
   ($4 sqrt 3 + sqrt 5 * 2)]
 
-The reason for this is that unary operators precede binary operators, because this unifies unary operators with function application. The only difference between function application and unary operators are recursive:
+Here, @racket[sqrt] is bounded less tightly to its argument because @racket[*] has a higher precedence. In fact, it's bound so lightly (0) that even @racket[+] takes precedence, and the result is
+
+@examples[#:eval evaluator2 #:label #f
+  (sqrt (+ 3 (sqrt (* 5 2))))]
+
+We can also see the difference between operator and function applications by look at repeated application.
 
 @examples[#:eval evaluator2 #:label #f
   (define-$+ $5 (sqrt 0 left))
