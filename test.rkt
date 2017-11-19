@@ -1,6 +1,6 @@
 #lang racket/base
 
-(require "default.rkt" rackunit syntax/parse/define (for-syntax racket/base))
+(require "main.rkt" rackunit syntax/parse/define (for-syntax racket/base))
 
 (define-syntax-parser check-expr-results
   #:datum-literals (:)
@@ -16,7 +16,7 @@
 (define (f3-1 x y z) x)
 (define (f3-2 x y z) y)
 (define (f3-3 x y z) z)
-(define ^ expt)
+
 (check-expr-results
   (123    : (123))
   (-123   : (- 123))

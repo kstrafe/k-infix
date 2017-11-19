@@ -5,13 +5,265 @@
 @title{k-infix}
 @author{kefin}
 
-@defmodule[k-infix]
-
 k-infix is a simple Haskell-like infix expression parser.
 
-@section{Introduction}
+k-infix makes writing infix expressions in Racket easy. It's extensible as one can add operators freely. k-infix supports prefix, postfix, and binary operators. Left and right -associativity are also supported.
 
-@defform[($ terms ...) #:grammar [(terms expr)]]
+@section{Quick start}
+
+To get started we require the library and use @racket[$] to write expressions.
+
+@examples[#:eval evaluator #:label #f
+  (require k-infix)
+  ($ 1 + 2)
+  ($ 1 + 2 / (3 * 4))
+  ($ 2 ^ 3 ^ 4)]
+
+The default expression parser handles arbitrary functions.
+@examples[#:eval evaluator #:label #f
+  (define (my-fn x y) (+ x (exp y)))
+  ($ my-fn 1 2 + 3)]
+
+Note that to use arbitrary expressions as function arguments, you must surround them by parentheses.
+@examples[#:eval evaluator #:label #f
+  ($ my-fn (1/2 + 1/2) 2)]
+
+Otherwise, the operator will break the function application.
+@examples[#:eval evaluator #:label #f
+  (eval:error ($ my-fn 1/2 + 1/2 2))]
+
+Arbitrary types are supported. Here, booleans.
+@examples[#:eval evaluator #:label #f
+  ($ 1 + 2 >= 3 and (5 + 2) / 2 < 5)]
+
+Use ~ to escape parsing.
+@examples[#:eval evaluator #:label #f
+  ($ ~(if + 1 2) - 3)]
+
+@section{Custom parse rules}
+
+We can add our own parse rules using @racket[define-$+], this generates a new parser.
+For example, let's make @racket[sqrt] a unary prefix operator.
+
+@examples[#:eval evaluator #:label #f
+  (require k-infix/define)
+  (define-$+ $1 (sqrt 200 left -100))
+  ($1 sqrt sqrt 16)]
+
+@para{An operator entry (@racket[(sqrt 200 left -100)]) is of the form @racket[(id precedence associativity unary-precedence maybe-description)].}
+
+@para{In the default context where @racket[sqrt] is a function and not an operator, evaluation would fail because it parses the above expression to @racket[(sqrt sqrt 16)].}
+
+@examples[#:eval evaluator #:label #f
+  (eval:error ($ sqrt sqrt 16))]
+
+The binary precedence is 200, this means that it will bind very strongly to whatever is to its right.
+
+@examples[#:eval evaluator #:label #f
+  ($1 sqrt 8 * 2)
+  (* (sqrt 8) 2)]
+
+If we want multiplication take precedence we need to turn the binary precedence down to be lower than multiplication (100):
+@examples[#:eval evaluator #:label #f
+  (define-$+ $2 (sqrt 99 left -100))
+  ($2 sqrt 8 * 2)
+  (sqrt (* 8 2))]
+
+When it comes to unary postfix operators the second precedence is important. It specifies how strong the operator's affinity is to be binary. For instance.
+
+@examples[#:eval evaluator #:label #f
+  (define-$+ $3 (! 99 left -100) (sqrt 99 left -100)) (code:comment "-100, really does not like to be binary")
+  (define (! n) (if (positive? n) (* n (! (sub1 n))) 1))
+  ($3 8 ! + sqrt 2)]
+
+In this example, once @racket[+] was seen, @racket[!] was demoted to a unary postfix operator, then, once @racket[sqrt] was seen, @racket[+] was kept a binary operator, since @racket[sqrt] has a lower postfix precedence.
+
+We can augment the example by investigating unary precedences among themselves.
+
+@examples[#:eval evaluator #:label #f
+  (define-$+ $ (! 99 left -100) (sqrt 99 left -100))
+  ($ sqrt 16 !)]
+
+From this we see that @racket[sqrt] binds more tightly if the precedences are equal. What if we increase the precedence of @racket[!]?
+
+@examples[#:eval evaluator #:label #f
+  (define-$+ $ (! 100 left -100) (sqrt 99 left -100))
+  ($ sqrt 16 !)]
+
+Now that we have defined the precedence we want, we may want to combine more rules, however, we don't want to keep re-specifying these rules. What we can do is combine parsers.
+
+@examples[#:eval evaluator #:label #f
+  (module other racket
+     (provide meta-parser)
+     (require k-infix/define)
+     (define-$+ meta-parser (! 100 left -100) (sqrt 99 left -100)))
+  (begin-for-syntax (require 'other))
+  (define-$+ $ #:parsers (meta-parser) (I 120 left -100))
+  (define I identity)
+  ($ sqrt I 16 !)]
+
+Combining @racket[define-$] forms of the parser is cumbersome because the definition is always one phase too low to be used in the next @racket[define-$]. The next section will show you how to keep every parser on the same phase using a non-define form.
+
+@section{Lower level parsing}
+k-infix provides low-level parser-generator 'primitives'. These are found in @racket[k-infix/custom], and their result is a function taking a syntax object as input.
+
+@examples[#:eval evaluator #:label #f
+  (require k-infix/custom)
+  ($+ (sqrt 100 left -100))]
+
+The primitives are @racket[$*] and @racket[$+], both are analogous to @racket[define-$*] and @racket[define-$+] respectively except that they do not define the parser one +1 phase.
+
+@examples[#:eval evaluator #:label #f
+  (define $ ($+ (sqrt 100 left -100)))
+  ($ #'(1 + sqrt 2))]
+
+Combining parsers is easy using the @racket[#:parser] directive as a first argument followed by a list of parsers. The parsers are merged in order, with conflicts resolved by prioritizing the last parser.
+
+@examples[#:eval evaluator #:label #f
+  (define $1 ($* (sqrt 200 left -100)))
+  (define $2 ($* (I 200 left -100)))
+  (define $3 ($* (+ 100 left 0)))
+  (define $ ($* #:parsers ($1 $2 $3)))
+  ($ #'(1 I + sqrt 2))]
+
+One can also add rules whilst adding parsers.
+
+@examples[#:eval evaluator #:label #f
+  (define $ ($* #:parsers ($) (- 100 left 0)))
+  ($ #'(1 I + sqrt 2 - 3))]
+
+@section{Reference}
+
+@defmodule[k-infix]
+
+@defform[#:literals (or and bior bxor band = != >= <= > < <=> << >> + - * / % ^
+                        not bnot ~)
+         ($ item ...)
+         #:grammar
+         [(item infix-expr (code:line ~ (expr)))
+          (infix-expr
+            (code:line or)
+            (code:line and)
+            (code:line bior)
+            (code:line bxor)
+            (code:line band)
+            (code:line =)
+            (code:line !=)
+            (code:line >=)
+            (code:line <=)
+            (code:line >)
+            (code:line <)
+            (code:line <=>)
+            (code:line <<)
+            (code:line >>)
+            (code:line +)
+            (code:line -)
+            (code:line *)
+            (code:line /)
+            (code:line %)
+            (code:line ^)
+            (code:line not)
+            (code:line bnot)
+                      )]]{
+  Parse an infix expression. If no @racket[item] is provided,
+  the parser returns its operator table. An expression preceded by
+  literal ~ will not be parsed.
+}
+
+@deftogether[(@defthing[bior procedure?]
+              @defthing[bxor procedure?]
+              @defthing[band procedure?]
+              @defthing[<< procedure?]
+              @defthing[>> procedure?]
+              @defthing[% procedure?]
+              @defthing[^ procedure?]
+              @defthing[bnot procedure?])]{
+  Operator aliases for @racket[bitwise-ior], @racket[bitwise-xor], @racket[bitwise-and], @racket[arithmetic-shift] (left) @racket[arithmetic-shift] (right),
+  @racket[modulo], @racket[expt], and @racket[bitwise-not] respectively.
+}
+
+@defproc[(!= [x number?] [y number]) boolean?]{
+  Inequality test.
+  Equivalent to @code{
+    (lambda (x y) (not (= x y)))
+  }
+}
+
+@defproc[(<=> [x number?] [y number?]) exact-integer?]{
+  Three-way numeric comparator.
+  Returns 1 if x > y,
+          0 if x = y,
+         -1 if x < y.
+}
+
+@subsection{Define forms}
+@defmodule[k-infix/define]
+
+@defform[#:literals (left right)
+         (define-$* name parse-lookup-entry ...)
+         #:grammar
+         [(name id)
+          (parse-lookup-entry (id prec associativity maybe-postfix-prec))
+          (prec exact-integer?)
+          (associativity left right)
+          (maybe-postfix-prec exact-integer?)]]{
+  @para{Defines a parser with the given name and parse-lookup-entry unified with the default-parse-table as its lookup table.}
+  @para{@racket[prec] is the precedence of the operator. The higher this is the tigher it binds to the surrounding expressions.}
+  @para{@racket[associativity] is the associativity of the operator. Left-associativity means that the operator will nest left as
+  @racket[(+ (+ (+ 1 2) 3) 4)]. Right-associativity nests right @racket[(^ (^ (^ 3 4) 2) 1)].}
+  @para{@racket[maybe-postfix-prec] determines the precedence in unary disputs. A unary dispute is where we have @racket[v1 op1 op2 v2], where @racket[v1 v2] are values and @racket[op1 op2] are operators. The operator with the highest @racket[postfix-prec] will become binary, the other unary.}
+}
+
+@defform[#:literals (left right)
+         (define-$+ name parse-lookup-entry ...)
+         #:grammar
+         [(name id)
+          (parse-lookup-entry (id prec associativity maybe-postfix-prec))
+          (prec exact-integer?)
+          (associativity left right)
+          (maybe-postfix-prec (code:line) exact-integer?)]]{
+  The same as @racket[define-$*] but merges the lookup table with the default lookup table from @racket[$].
+}
+
+@subsection{Custom forms}
+@defmodule[k-infix/custom]
+
+@defform*[#:literals (left right)
+          (
+           ($* parse-lookup-entry ...)
+           ($* #:parsers (parser ...) parse-lookup-entry ...)
+          )
+         #:grammar
+         [(name id)
+          (parsers expr)
+          (parse-lookup-entry (id prec associativity maybe-postfix-prec))
+          (prec exact-integer?)
+          (associativity left right)
+          (maybe-postfix-prec (code:line) exact-integer?)]]{
+  Creates a new parser using the parse lookup table.
+  The second form merges previous parsers. Parse rules are overwritten by those that are defined last.
+}
+
+@defform*[#:literals (left right)
+          (
+           ($+ parse-lookup-entry ...)
+           ($+ #:parsers (parser ...) parse-lookup-entry ...)
+          )
+         #:grammar
+         [(name id)
+          (parsers expr)
+          (parse-lookup-entry (id prec associativity maybe-postfix-prec))
+          (prec exact-integer?)
+          (associativity left right)
+          (maybe-postfix-prec (code:line) exact-integer?)]]{
+  Same as @racket[$*] but merges in the default parse table.
+}
+
+@subsection{Default parser rules}
+Here are all operators, their precedence, and associativity respectively.
+@examples[
+  (require k-infix racket/pretty)
+  (pretty-write ($))]
 
 @(require racket/sandbox scribble/example)
 @(define evaluator
@@ -20,179 +272,6 @@ k-infix is a simple Haskell-like infix expression parser.
                   [sandbox-memory-limit #f]
                   [sandbox-eval-limits #f])
      (make-evaluator 'racket)))
-@examples[#:eval evaluator
-  (require k-infix)
-  ($ 1 + 2)
-  ($ 1 + 2 / (3 * 4))
-
-  (code:comment "^ is right-associative: parses as (^ 2 (^ 3 4))")
-  (define ^ expt)
-  ($ 2 ^ 3 ^ 4)]
-
-The default expression parser handles arbitrary functions.
-@examples[#:eval evaluator
-  (require k-infix)
-  (define (my-fn x y) (+ x (exp y)))
-  ($ my-fn 1 2)]
-
-Note that to use arbitrary expressions as function arguments, you must surround them by parentheses.
-@examples[#:eval evaluator
-  ($ my-fn (1/2 + 1/2) 2)]
-
-Otherwise, the operator will break the function application.
-@examples[#:eval evaluator
-  (eval:error ($ my-fn 1/2 + 1/2 2))]
-
-Arbitrary types are supported. Here, booleans.
-@examples[#:eval evaluator
-  ($ 1 + 2 >= 3 and (5 + 2) / 2 < 5)]
-
-@subsection{Importing standard bindings}
-Functions such as @racket[modulo] are not bound to @racket[%] by default. To do this we can import @racket[k-infix/default] which provides @racket[$ default-parse-table bior bxor band != <=> << >> % ^ bnot]
-
-@(set! evaluator
-   (parameterize ([sandbox-output 'string]
-                  [sandbox-error-output 'string]
-                  [sandbox-memory-limit #f]
-                  [sandbox-eval-limits #f])
-     (make-evaluator 'racket)))
-
-Bitwise operators.
-@examples[#:eval evaluator
-  (require k-infix/default)
-  ($ - sin 3)
-  ($ bnot 4 % 32818 bxor 3102 bior 31293 band 3 >> 2 << 3)]
-
-
-Comparison operators.
-@examples[#:eval evaluator
-  (require k-infix/default)
-  ($ 1 != (2 <=> 2))]
-
-Other operators are available from the default racket namespace and are listed in @secref["dpr"].
-
-@subsection{Parser separators}
-
-For expressions that require non-infix evaluation you can use a @racket['separator] (see @secref["plt"]).
-~ is the default separator. A parser separator is always unary and with highest precedence.
-
-@examples[#:eval evaluator
-  ($ 1 + ~(if + 3 4))]
-
-Not using the separator in this case would result in the parser manipulating the @racket[if].
-
-@examples[#:eval evaluator
-  (eval:error ($ 1 + (if + 3 4)))]
-
-The separator is only active for the immediately following expression
-
-@examples[#:eval evaluator
-  ($ 1 + ~(if + 3 4) * (2 + 1))]
-
-Here is a more advanced example.
-@examples[#:eval evaluator
-  ($ 1 + ~(lambda (x y) (modulo x y)) (~(if + 3 4) * (2 + 1)) 3)]
-
-@section[#:tag "plt"]{Parse lookup table}
-The parser uses a lookup table to determine the precedence and associativity of operators, you can define your own using @racket[create-lookup-table].
-@defform[(create-lookup-table plt)
-         #:grammar ([plt ((op prec assoc maybe-unary maybe-description) ...)]
-                    [prec exact-integer]
-                    [assoc left right]
-                    [maybe-unary (code:line)
-                                   unary-prec]
-                    [unary-prec exact-integer]
-                    [maybe-description (code:line) description])]{
-  Returns a parse lookup table.
-  Not specifying unary makes unary-prec = prec.
-}
-
-@defproc[(parse-lookup-table? [table hash?]) boolean?]{
-  Checks if a table is a valid parse-lookup-table.
-}
-
-@examples[
-  (require k-infix/custom)
-  (let ([table
-          (create-lookup-table (+ 0 left "addition operator")
-                               (^ 1 right "power operator"))])
-    (writeln table)
-    (parse-lookup-table? table))]
-
-@section{Custom parse rules}
-
-@racket[$*] and @racket[$+] allow you to create custom parse rules.
-
-@defproc[($* [plt parse-lookup-table?]) procedure?]{
-  Creates a parser with plt as the sole lookup table.
-}
-
-@defproc[($+ [plt parse-lookup-table?]) procedure?]{
-  Creates a parser as a union of plt and the default-parse-table.
-}
-
-Suppose we want to add the identity operator the the @racket[default-parse-table].
-
-@(set! evaluator
-   (parameterize ([sandbox-output 'string]
-                  [sandbox-error-output 'string]
-                  [sandbox-memory-limit #f]
-                  [sandbox-eval-limits #f])
-     (make-evaluator 'racket)))
-
-@examples[#:eval evaluator
-  (require (for-syntax racket k-infix/custom))
-  (define-syntax (my-$ stx) (($+ #hash((I  . (0 left 0)))) stx))
-  (define (I x) x)
-  (my-$ 1 + I 5 )]
-
-However, using @racket[I] as a binary operator will make the code fail during runtime.
-
-@examples[#:eval evaluator
-  (eval:error (my-$ 1 I 5))]
-
-To make an operator be both unary and binary you can use @racket[case-lambda].
-
-@examples[#:eval evaluator
-  (let ([I (case-lambda
-             [(x)   x]
-             [(x y) (+ x y)])])
-    (my-$ 1 I I 5))]
-
-@subsection{define-$ forms}
-
-Here are more ergnomic forms for defining new parsers.
-
-@defform[(define-$* name plt)]{
-  Defines a parser with the given name and plt (see @secref["plt"]) as its lookup table.
-}
-
-@defform[(define-$+ name plt)]{
-  Defines a parser with the given name and plt (see @secref["plt"]) unified with the default-parse-table as its lookup table.
-}
-
-@(set! evaluator
-   (parameterize ([sandbox-output 'string]
-                  [sandbox-error-output 'string]
-                  [sandbox-memory-limit #f]
-                  [sandbox-eval-limits #f])
-     (make-evaluator 'racket)))
-
-@examples[#:eval evaluator
-  (require k-infix/define)
-  (define-$+ my-$ (I 0 left))
-  (define (I x) x)
-  (my-$ 1 + I 5 )]
-
-@examples[#:eval evaluator
-  (define-$* my-$2 (+ 1 left) (* 0 right))
-  (my-$2 1 + 2 * 5 )]
-
-You can overwrite any rule from the default table by specifying it in @racket[define-$+].
-
-@examples[#:eval evaluator
-  (define-$+ my-$3 (- 0 right))
-  (my-$3 1 - 2 - 3)]
 
 @section{Examples}
 Here are some more examples to get you started.
@@ -202,70 +281,6 @@ Here are some more examples to get you started.
                   [sandbox-memory-limit #f]
                   [sandbox-eval-limits #f])
      (make-evaluator 'racket)))
-@subsection{Lists}
-Lists are written using functional form.
-@examples[#:eval evaluator2 #:label #f
-  (require k-infix k-infix/define)
-  ($ list 1 (2 + 3) 9 (sin 10 + 1))]
-One can add a parse-rule for `list-append` like so
-@examples[#:eval evaluator2 #:label #f
-  (define-$+ $- (append 0 left))
-  ($- list 1 (2 + 3) 9 (sin 10 + 1) append list 'a 'b 'c)]
-
-Or if you prefer @racket[++]. Let's also throw in some cons.
-@examples[#:eval evaluator2 #:label #f
-  (define ++ append)
-  (define-$+ $2 (++ 0 left) (cons -1 left))
-  ($2 ~(if (symbol? 'a-symbol) 'it-is-a-symbol #f) cons list 1 (2 + 3) 9 (sin 10 + 1) ++ list 'a 'b 'c)]
-
-Here we've assigned @racket[cons] a precedence of -1, meaning that it will apply after @racket[++].
-
-@subsection{Unary operators vs function application}
-
-Depending on the precedence, square root may come before or after other operators. Here we use high precedence so that the code is evaluated as @racket[(+ (sqrt 3) (* (sqrt 5) 2))].
-
-@examples[#:eval evaluator2 #:label #f
-  (define-$+ $3 (sqrt 20 left 9))
-  ($3 sqrt 3 + sqrt 5 * 2)]
-
-One can also use lower precedence:
-
-@examples[#:eval evaluator2 #:label #f
-  (define-$+ $4 (sqrt 9 left))
-  ($4 sqrt 3 + sqrt 5 * 2)]
-
-Here, @racket[sqrt] is bounded less tightly to its argument because @racket[*] has a higher precedence. In fact, it's bound so lightly (0) that even @racket[+] takes precedence, and the result is
-
-@examples[#:eval evaluator2 #:label #f
-  (sqrt (+ 3 (sqrt (* 5 2))))]
-
-We can also see the difference between operator and function applications by look at repeated application.
-
-@examples[#:eval evaluator2 #:label #f
-  (define-$+ $5 (sqrt 0 left))
-  ($5 sqrt sqrt 5)
-  (eval:error ($5 sqr sqr 5))]
-
-The latter fails because it is parsed to @racket[(sqr sqr 5)], and the former @racket[(sqrt (sqrt 5))].
-
-@subsection{Lambdas}
-
-Using lambdas in k-infix is not trivial.
-
-@examples[#:eval evaluator2 #:label #f
-  (define-$+ $6 (lambda 20 left))
-  ($6 ~(x) lambda (x - 1) 10)]
-
-This doesn't evaluate the lambda because the parser isn't that smart; it can't know if (x - 1) will return a function that may bind 10, so it defaults to creating a lambda which applies @racket[((- x 1) 10)].
-
-To remedy this we can create a helper function.
-
-@examples[#:eval evaluator2 #:label #f
-  (define-$+ $7 (lambda 20 left) (!-> 19 left))
-  (define (!-> x y) (x y))
-  ($7 ~(x) lambda (x - 1) !-> 10)]
-
-It's much more convenient to define functions than to use lambdas.
 
 @subsection{Coin flipping}
 
@@ -274,7 +289,7 @@ Suppose you have N coins and K flips. You can flip an arbitrary coin. All coins 
 What is the expected value of @racket[(N K)] coins and flips given that you waste any remaining flips on a single coin once all coins are flipped?
 
 @examples[#:eval evaluator2 #:label #f
-  (require k-infix/default memoize)
+  (require k-infix memoize)
   (define/memo (x n k)
     (match `(,n ,k)
       [`(,_ 0) 0]
@@ -285,36 +300,3 @@ What is the expected value of @racket[(N K)] coins and flips given that you wast
   (x 2 2)
   (x 2 3)
   (exact->inexact (x 50 250))]
-
-@subsection{Postfix and prefix operators}
-
-For postfix operators we need to use a low secondary precedence value. This means that in @racket[A OP1 OP2 B] (where OP1 is our operator), OP1 will "yield" and be transformed into @racket[(OP1 A) OP2 B].
-
-Let's kick off an example with the factorial function, which in mathematical notation is often written as
-@racket[N !], where ! is the factorial operator.
-
-@examples[#:eval evaluator2 #:label #f
-  (define-$+ $7 (! 20 left -100))
-  (define (! n) (if (positive? n) (* n (! (sub1 n))) 1))
-  ($7 20 ! = 2432902008176640000)]
-
-Some general rules:
-The first precedence value is both prefix and binary binding strength. A high value here ensures that no binaries break it up.
-High secondary precedence means that it'll "fight" to become the binary operator.
-
-@section{Miscellaneous}
-
-Information that doesn't fit elsewhere
-
-@subsection{Fetching a parser's lookup table}
-
-The table for a parser can be retrieved by running the parser without any arguments.
-
-@examples[#:eval evaluator
-  (my-$2)]
-
-@subsection[#:tag "dpr"]{Default parser rules}
-Here are all operators, their precedence, and associativity respectively.
-@examples[
-  (require k-infix/default racket/pretty)
-  (pretty-write default-parse-table)]

@@ -38,7 +38,7 @@
   [(_ (op:id prec:exact-integer assoc:lr
              (~optional unary-prec:exact-integer #:defaults ([unary-prec #'prec]))
              (~optional desc:expr #:defaults ([desc #'"no description given"]))) ...)
-   #'(make-immutable-hash '((op . (prec assoc unary-prec unary-assoc desc)) ...))])
+   #'(make-immutable-hash '((op . (prec assoc unary-prec desc)) ...))])
 
 (define (entry? lst)
   (and
