@@ -291,10 +291,10 @@ What is the expected value of @racket[(N K)] coins and flips given that you wast
 @examples[#:eval evaluator2 #:label #f
   (require k-infix memoize)
   (define/memo (x n k)
-    (match `(,n ,k)
-      [`(,_ 0) 0]
-      [`(0 ,k) ($ 1/2 * x 0 (k - 1) + 1/2 * (-1 + x 1 (k - 1)))]
-      [`(,n ,k) ($ 1/2 * (1 + x (n - 1) (k - 1)) + 1/2 * x n (k - 1))]))
+    (match* (n k)
+      [(_ 0) 0]
+      [(0 k) ($ 1/2 * x 0 (k - 1) + 1/2 * (-1 + x 1 (k - 1)))]
+      [(n k) ($ 1/2 * (1 + x (n - 1) (k - 1)) + 1/2 * x n (k - 1))]))
   (x 1 1)
   (x 2 1)
   (x 2 2)
