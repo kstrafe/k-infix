@@ -142,7 +142,7 @@ Suppose we want to add the identity operator the the @racket[default-parse-table
 
 @examples[#:eval evaluator
   (require (for-syntax racket k-infix/custom))
-  (define-syntax (my-$ stx) (($+ #hash((I  . (0 left)))) stx))
+  (define-syntax (my-$ stx) (($+ #hash((I  . (0 left 0)))) stx))
   (define (I x) x)
   (my-$ 1 + I 5 )]
 
@@ -225,13 +225,13 @@ Here we've assigned @racket[cons] a precedence of -1, meaning that it will apply
 Depending on the precedence, square root may come before or after other operators. Here we use high precedence so that the code is evaluated as @racket[(+ (sqrt 3) (* (sqrt 5) 2))].
 
 @examples[#:eval evaluator2 #:label #f
-  (define-$+ $3 (sqrt 20 left))
+  (define-$+ $3 (sqrt 20 left 9))
   ($3 sqrt 3 + sqrt 5 * 2)]
 
 One can also use lower precedence:
 
 @examples[#:eval evaluator2 #:label #f
-  (define-$+ $4 (sqrt 0 left))
+  (define-$+ $4 (sqrt 9 left))
   ($4 sqrt 3 + sqrt 5 * 2)]
 
 Here, @racket[sqrt] is bounded less tightly to its argument because @racket[*] has a higher precedence. In fact, it's bound so lightly (0) that even @racket[+] takes precedence, and the result is
@@ -286,7 +286,25 @@ What is the expected value of @racket[(N K)] coins and flips given that you wast
   (x 2 3)
   (exact->inexact (x 50 250))]
 
+@subsection{Postfix and prefix operators}
+
+For postfix operators we need to use a low secondary precedence value. This means that in @racket[A OP1 OP2 B] (where OP1 is our operator), OP1 will "yield" and be transformed into @racket[(OP1 A) OP2 B].
+
+Let's kick off an example with the factorial function, which in mathematical notation is often written as
+@racket[N !], where ! is the factorial operator.
+
+@examples[#:eval evaluator2 #:label #f
+  (define-$+ $7 (! 20 left -100))
+  (define (! n) (if (positive? n) (* n (! (sub1 n))) 1))
+  ($7 20 ! = 2432902008176640000)]
+
+Some general rules:
+The first precedence value is both prefix and binary binding strength. A high value here ensures that no binaries break it up.
+High secondary precedence means that it'll "fight" to become the binary operator.
+
 @section{Miscellaneous}
+
+Information that doesn't fit elsewhere
 
 @subsection{Fetching a parser's lookup table}
 

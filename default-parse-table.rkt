@@ -28,5 +28,5 @@
     (^ 11 right "power")
     (not 11 right "boolean not")
     (bnot 11 right "bitwise not")
-    (~ 0 separator "prevent parsing of subform")
+    ; (~ 0 separator "prevent parsing of subform")
     ))

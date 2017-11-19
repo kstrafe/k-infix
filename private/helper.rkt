@@ -31,8 +31,8 @@
 
 (begin-for-syntax
   (define-syntax-class lr
-    #:datum-literals (left right separator)
-    (pattern (~or left right separator))))
+    #:datum-literals (left right)
+    (pattern (~or left right))))
 
 (define-syntax-parser create-lookup-table
   [(_ (op:id prec:exact-integer assoc:lr
@@ -121,21 +121,26 @@
 
 ; Process an operator
 (define (operate val item out ops unary? escape? plt)
-  (if (or (empty? ops) unary?)
+  (if (or (empty? ops))
     (values out (cons (list item unary?) ops) #t #f)
     (let* ([val*       (hash-ref plt val)]
            [val-unary? unary?]
            [val-prec   (car val*)]
+           [val-precu  (caddr val*)]
            [val-assoc  (cadr val*)]
            [top+       (car ops)]
            [top*       (car top+)]
            [top        (hash-ref plt (syntax-e (car top+)))]
            [top-unary? (cadr top+)]
-           [top-prec   ((if top-unary? caddr car) top)]
+           [top-prec   (car top)]
+           [top-precu  (caddr top)]
            [top-assoc  (cadr top)])
-      (if (and (>= top-prec val-prec) (symbol=? val-assoc 'left))
-        (operate val item (if top-unary? (unary-out out top*) (binary-out out top*)) (cdr ops) #f escape? plt)
-        (values out (cons (list item unary?) ops) #t #f)))))
+      (trce top-precu val-prec)
+      (if (and (< top-precu val-precu) val-unary?)
+        (operate val item (unary-out out top*) (cdr ops) #f escape? plt)
+        (if (and (not unary?) (>= top-prec val-prec) (symbol=? val-assoc 'left))
+          (operate val item (if top-unary? (unary-out out top*) (binary-out out top*)) (cdr ops) #f escape? plt)
+          (values out (cons (list item unary?) ops) #t #f))))))
 
 ; Process a non-operator
 (define (shunt value item out ops unary? escape?)
