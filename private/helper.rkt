@@ -71,18 +71,17 @@
              [unary?   #t]
              [escape?  #f])
             ([item terms])
-    (let* ([content (syntax-e item)])
-      (trce outstack opstack unary? escape? content)
-      (info "==========")
-      (cond
-        [(list? content)
-         (express content item outstack opstack unary? escape? stx content plt)]
-        [(and (symbol? content) (symbol=? content '~))
-         (values outstack opstack unary? #t)]
-        [(hash-has-key? plt content)
-         (operate content item outstack opstack unary? escape? plt)]
-        [else (shunt content item outstack opstack unary? escape?)]
-      )
+    (define content (syntax-e item))
+    (trce outstack opstack unary? escape? content)
+    (info "==========")
+    (cond
+      [(list? content)
+       (express content item outstack opstack unary? escape? stx content plt)]
+      [(and (symbol? content) (symbol=? content '~))
+       (values outstack opstack unary? #t)]
+      [(hash-has-key? plt content)
+       (operate content item outstack opstack unary? escape? plt)]
+      [else (shunt content item outstack opstack unary? escape?)]
     )
     (begin
       (warn outstack opstack)
