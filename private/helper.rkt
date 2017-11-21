@@ -92,6 +92,7 @@
           (binary-out out (car ops)))
         (begin
           (dbug out)
+          (warn (syntax->datum (datum->syntax stx (car out))))
           (datum->syntax stx (car out)))
       ))))
 
