@@ -2,6 +2,14 @@
 @require[@for-label[k-infix
                     racket/base]]
 
+@(require racket/sandbox scribble/example)
+@(define evaluator
+   (parameterize ([sandbox-output 'string]
+                  [sandbox-error-output 'string]
+                  [sandbox-memory-limit #f]
+                  [sandbox-eval-limits #f])
+     (make-evaluator 'racket)))
+
 @title{k-infix}
 @author{kefin}
 
@@ -264,14 +272,6 @@ Here are all operators, their precedence, and associativity respectively.
 @examples[
   (require k-infix racket/pretty)
   (pretty-write ($))]
-
-@(require racket/sandbox scribble/example)
-@(define evaluator
-   (parameterize ([sandbox-output 'string]
-                  [sandbox-error-output 'string]
-                  [sandbox-memory-limit #f]
-                  [sandbox-eval-limits #f])
-     (make-evaluator 'racket)))
 
 @section{Examples}
 Here are some more examples to get you started.
