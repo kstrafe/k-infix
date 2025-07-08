@@ -83,8 +83,13 @@
       [else (shunt content item outstack opstack prevop? escape?)]
     )
     (begin
+      ; Make the top (last) operator inherit prevop? if it is #t.
+      (define adjusted-opstack
+        (if (and prevop? (pair? opstack))
+          (cons (list (caar opstack) #t) (cdr opstack))
+          opstack))
       (for/fold-let ([out outstack])
-                    ([ops opstack])
+                    ([ops adjusted-opstack])
         (if (cadr ops)
           (unary-out out (car ops))
           (binary-out out (car ops)))
